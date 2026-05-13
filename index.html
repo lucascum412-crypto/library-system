@@ -169,6 +169,10 @@
                         </div>
                     </div>
                     <div class="space-y-1">
+                        <label class="text-[10px] font-mono uppercase opacity-50">Google Sheets API URL (GAS)</label>
+                        <input type="url" id="profile-gas-url" class="form-input text-[10px] font-mono" placeholder="https://script.google.com/macros/s/.../exec">
+                    </div>
+                    <div class="space-y-1">
                         <label class="text-[10px] font-mono uppercase opacity-50" data-t="avatarLabel">頭像網址</label>
                         <input type="url" id="profile-avatar" class="form-input text-sm">
                     </div>
@@ -727,9 +731,29 @@
                 document.getElementById("profile-grade").value = currentUser.grade;
                 updateClassOptions('profile');
                 document.getElementById("profile-class").value = currentUser.classLetter;
+                document.getElementById("profile-gas-url").value = currentUser.gasUrl || "";
                 document.getElementById("profile-avatar").value = currentUser.photo || "";
             }
             document.getElementById(id).classList.remove("hidden");
+        }
+
+        // --- Apps Script Integration ---
+        // 如果您有部署後的 GAS URL，請填寫在下方，這樣所有用戶都會自動同步到同一個試算表
+        const GLOBAL_GAS_URL = ""; 
+
+        async function syncToGas(action, record) {
+            const url = GLOBAL_GAS_URL || (currentUser ? currentUser.gasUrl : null);
+            if (!url) return;
+            
+            try {
+                await fetch(url, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    body: JSON.stringify({ action, record, system: "LibrarySystem_v1" })
+                });
+            } catch (error) {
+                console.error("GAS Sync error:", error);
+            }
         }
 
         function closeModal(id) {
@@ -841,9 +865,10 @@
             const id = document.getElementById("profile-id").value;
             const grade = document.getElementById("profile-grade").value;
             const classLetter = document.getElementById("profile-class").value;
+            const gasUrl = document.getElementById("profile-gas-url").value;
             const photo = document.getElementById("profile-avatar").value;
             
-            currentUser = { ...currentUser, name, id, grade, classLetter, photo };
+            currentUser = { ...currentUser, name, id, grade, classLetter, gasUrl, photo };
             localStorage.setItem("user", JSON.stringify(currentUser));
             
             updateUserUI();
@@ -866,10 +891,10 @@
                 localStorage.removeItem("user");
                 currentUser = null;
                 closeModal('modal-profile');
-                // Use a short delay for smooth transition
-                setTimeout(() => {
-                    checkAuth();
-                }, 50);
+                
+                // Final reset: reload the page to clear any in-memory state
+                alert(currentLang === 'en' ? "Logged out successfully." : "已成功登出。");
+                location.reload();
             }
         }
 
@@ -923,6 +948,7 @@
             
             records.push(newRecord);
             localStorage.setItem("records", JSON.stringify(records));
+            syncToGas('save', newRecord);
             renderList();
         }
 
@@ -1069,6 +1095,7 @@
                 records[index].status = "returned";
                 records[index].returnedAt = new Date().toISOString();
                 localStorage.setItem("records", JSON.stringify(records));
+                syncToGas('return', records[index]);
                 renderList();
             }
         }
