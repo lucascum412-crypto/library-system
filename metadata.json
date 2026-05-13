@@ -1,0 +1,5 @@
+{
+  "name": "Library Rental System",
+  "description": "A full-stack library management system with real-time updates and data persistence.",
+  "requestFramePermissions": []
+}

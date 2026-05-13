@@ -1,0 +1,62 @@
+{
+  "entities": {
+    "Rental": {
+      "title": "Rental",
+      "description": "A record of a book rental",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "bookTitle": { "type": "string" },
+        "borrowerName": { "type": "string" },
+        "studentId": { "type": "string" },
+        "grade": { "type": "string" },
+        "classLetter": { "type": "string" },
+        "borrowDate": { "type": "string", "format": "date" },
+        "returnDate": { "type": "string", "format": "date" },
+        "status": { "type": "string", "enum": ["borrowed", "returned"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "returnedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "bookTitle", "borrowerName", "borrowDate", "returnDate", "status"]
+    },
+    "Favorite": {
+      "title": "Favorite",
+      "description": "A book tracked by a user",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "bookTitle": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "bookTitle"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "studentId": { "type": "string" },
+        "name": { "type": "string" },
+        "grade": { "type": "string" },
+        "classLetter": { "type": "string" },
+        "photoURL": { "type": "string" }
+      },
+      "required": ["uid", "studentId", "name", "grade", "classLetter"]
+    }
+  },
+  "firestore": {
+    "/rentals/{rentalId}": {
+      "schema": "Rental",
+      "description": "Collection of all rental records"
+    },
+    "/favorites/{favoriteId}": {
+      "schema": "Favorite",
+      "description": "User specific book tracking"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile data"
+    }
+  }
+}

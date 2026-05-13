@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Library Rental System - Static</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=JetBrains+Mono&family=Playfair+Display:ital,wght@1,700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAhNkPdYg2hCqiqdnoASLfSf98YktHem0U",
+            authDomain: "gen-lang-client-0524752945.firebaseapp.com",
+            projectId: "gen-lang-client-0524752945",
+            storageBucket: "gen-lang-client-0524752945.firebasestorage.app",
+            messagingSenderId: "281147232521",
+            appId: "1:281147232521:web:81a98c4c4b9ad88b9ec3d8"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const provider = new GoogleAuthProvider();
+
+        // Expose to window for global access
+        window.auth = auth;
+        window.provider = provider;
+        window.signInWithPopup = signInWithPopup;
+        window.signOut = signOut;
+
+        // Listen for auth state
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                // If logged in via Google but not fully "registered" in our local sense
+                // we still allow checkAuth to handle the local storage part
+                checkAuth();
+            } else {
+                checkAuth(); // This will show login if no local user either
+            }
+        });
+    </script>
+    <style>
+        :root {
+            --bg: #E4E3E0;
+            --ink: #141414;
+        }
+        body {
+            background-color: var(--bg);
+            color: var(--ink);
+            font-family: 'Inter', sans-serif;
+        }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        .font-serif-italic { font-family: 'Playfair Display', serif; font-style: italic; }
+        
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb { background: var(--ink); border-radius: 10px; }
+
+        .form-input {
+            width: 100%;
+            background: transparent;
+            border-bottom: 1px solid var(--ink);
+            padding: 8px 0;
+            outline: none;
+            transition: border-opacity 0.2s;
+        }
+        .form-input:focus { border-bottom-color: rgba(20, 20, 20, 0.5); }
+
+        .btn-active { background: var(--bg) !important; color: var(--ink) !important; }
+        .tab-btn { transition: all 0.2s; }
+        
+        .pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+
+        .card-enter {
+            animation: slideUp 0.4s ease-out forwards;
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Modal Overlay */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(20, 20, 20, 0.85);
+            z-index: 300;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            backdrop-blur: 8px;
+            padding: 24px;
+        }
+    </style>
+</head>
+<body class="selection:bg-[#141414] selection:text-[#E4E3E0]">
+    <!-- Help Modal -->
+    <div id="modal-help" class="modal-overlay hidden">
+        <div class="w-full max-w-lg bg-[#E4E3E0] p-10 rounded-sm shadow-2xl space-y-6">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-2xl font-bold uppercase tracking-widest" data-t="manualTitle">使用說明書</h2>
+                <button onclick="closeModal('modal-help')" class="p-2 hover:bg-[#141414] hover:text-[#E4E3E0] transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+            </div>
+            <div class="space-y-4 font-serif-italic opacity-80 text-lg leading-relaxed">
+                <p data-t="helpStep1">1. 登錄您的帳戶以同步本地借閱資料。</p>
+                <p data-t="helpStep2">2. 在「借書登記」頁面可以查看推薦書籍或手動登記新借閱。</p>
+                <p data-t="helpStep3">3. 點擊右上角頭像可以進入個人檔案修改資料或切換語言。</p>
+                <p data-t="helpStep4">4. 在「還書管理」頁面可以查看您目前借出的書籍並進行歸還登記。</p>
+            </div>
+            <button onclick="closeModal('modal-help')" class="w-full bg-[#141414] text-[#E4E3E0] py-4 text-xs font-bold uppercase tracking-widest" data-t="close">關閉</button>
+        </div>
+    </div>
+
+    <!-- Profile/Settings Modal (Expanded to Profile Page) -->
+    <div id="modal-profile" class="modal-overlay hidden">
+        <div class="w-full max-w-xl bg-[#E4E3E0] p-8 rounded-sm shadow-2xl space-y-8 max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between border-b border-[#141414] border-opacity-10 pb-4">
+                <h2 class="text-2xl font-bold uppercase tracking-widest" data-t="profileTitle">個人資料管理</h2>
+                <button onclick="closeModal('modal-profile')" class="p-2 hover:bg-[#141414] hover:text-[#E4E3E0] transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-10">
+                <!-- User Data Section -->
+                <form onsubmit="handleUpdateProfile(event)" class="space-y-6">
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-mono uppercase opacity-50" data-t="nameLabel">姓名</label>
+                        <input type="text" id="profile-name" class="form-input text-lg font-bold" required>
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-mono uppercase opacity-50" data-t="idLabel">學號 / 編號</label>
+                        <input type="text" id="profile-id" class="form-input text-lg font-mono" required>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="space-y-1">
+                            <label class="text-[10px] font-mono uppercase opacity-50" data-t="gradeLabel">年級</label>
+                            <select id="profile-grade" class="form-input text-sm h-[40px] bg-transparent" onchange="updateClassOptions('profile')" required>
+                                <optgroup label="Primary (P)">
+                                    <option value="P1">P1</option><option value="P2">P2</option>
+                                    <option value="P3">P3</option><option value="P4">P4</option>
+                                    <option value="P5">P5</option><option value="P6">P6</option>
+                                </optgroup>
+                                <optgroup label="Secondary (S)">
+                                    <option value="S1">S1</option><option value="S2">S2</option>
+                                    <option value="S3">S3</option><option value="S4">S4</option>
+                                    <option value="S5">S5</option><option value="S6">S6</option>
+                                </optgroup>
+                            </select>
+                        </div>
+                        <div class="space-y-1">
+                            <label class="text-[10px] font-mono uppercase opacity-50" data-t="classLabel">班別</label>
+                            <select id="profile-class" class="form-input text-sm h-[40px] bg-transparent" required>
+                                <!-- Options filled by JS -->
+                            </select>
+                        </div>
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-mono uppercase opacity-50" data-t="avatarLabel">頭像網址</label>
+                        <input type="url" id="profile-avatar" class="form-input text-sm">
+                    </div>
+                    <button type="submit" class="w-full bg-[#141414] text-[#E4E3E0] py-4 text-xs font-bold uppercase tracking-widest hover:opacity-90 transition-all" data-t="saveChanges">儲存修改</button>
+                </form>
+
+                <!-- Settings Section -->
+                <div class="space-y-8">
+                    <div class="space-y-4">
+                        <label class="text-[10px] font-mono uppercase opacity-50" data-t="selectLanguage">語言設定</label>
+                        <div class="flex flex-col gap-2">
+                            <button onclick="changeLanguage('zh-TW')" id="lang-zh" class="w-full border border-[#141414] py-3 text-xs font-bold uppercase tracking-widest hover:bg-[#141414] hover:text-[#E4E3E0] transition-all">繁體中文</button>
+                            <button onclick="changeLanguage('en')" id="lang-en" class="w-full border border-[#141414] py-3 text-xs font-bold uppercase tracking-widest hover:bg-[#141414] hover:text-[#E4E3E0] transition-all">English</button>
+                        </div>
+                    </div>
+
+                    <div class="h-[1px] bg-[#141414] opacity-10"></div>
+
+                    <div class="space-y-4">
+                        <button onclick="exportUserData()" class="w-full border border-[#141414] border-dashed py-3 text-[10px] font-mono uppercase tracking-widest hover:bg-[#141414] hover:text-[#E4E3E0] transition-all flex items-center justify-center gap-2">
+                            <span data-t="exportData">匯出用戶檔案 (JSON)</span>
+                        </button>
+                        <button onclick="handleLogout()" class="w-full bg-red-600 text-white py-4 text-xs font-bold uppercase tracking-widest hover:opacity-90 transition-all flex items-center justify-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+                            <span data-t="logout">登出並清除本地快取</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="login-overlay" class="fixed inset-0 bg-[#141414] z-[200] flex items-center justify-center p-6 backdrop-blur-md">
+        <div class="w-full max-w-sm bg-[#E4E3E0] p-10 rounded-sm shadow-2xl space-y-8 animate-in fade-in zoom-in duration-300">
+            <div class="text-center space-y-2">
+                <div class="flex justify-center mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="opacity-20"><path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/><path d="M12 2h10"/><path d="m16 2-4 4 4 4"/></svg>
+                </div>
+                <h2 class="text-2xl font-bold uppercase tracking-widest" data-t="loginTitle">圖書館系統登錄</h2>
+                <p class="font-serif-italic opacity-60 text-sm" data-t="loginSub">請輸入您的資料以存取系統</p>
+            </div>
+            
+            <div class="space-y-4">
+                <button onclick="handleGoogleLogin()" class="w-full border border-[#141414] py-3 flex items-center justify-center gap-3 text-xs font-bold uppercase tracking-widest hover:bg-[#141414] hover:text-[#E4E3E0] transition-all">
+                    <svg viewBox="0 0 24 24" width="18" height="18" xmlns="http://www.w3.org/2000/svg"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/><path d="M1 1h22v22H1z" fill="none"/></svg>
+                    <span data-t="googleLogin">使用 Google 帳號登入</span>
+                </button>
+                <div class="flex items-center gap-4">
+                    <div class="h-[1px] flex-1 bg-[#141414] opacity-10"></div>
+                    <span class="text-[10px] font-mono uppercase opacity-30 text-nowrap" data-t="orFillInfo">或者填寫個人資料</span>
+                    <div class="h-[1px] flex-1 bg-[#141414] opacity-10"></div>
+                </div>
+            </div>
+            
+            <form onsubmit="handleLogin(event)" class="space-y-6">
+                <div class="space-y-4">
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-mono uppercase opacity-50" data-t="nameLabel">姓名</label>
+                        <input type="text" id="login-name" class="form-input text-lg" placeholder="Name" required>
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-mono uppercase opacity-50" data-t="idLabel">學號 / 編號</label>
+                        <input type="text" id="login-id" class="form-input text-lg" placeholder="SXXXXX" required>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="space-y-1">
+                            <label class="text-[10px] font-mono uppercase opacity-50" data-t="gradeLabel">年級</label>
+                            <select id="login-grade" class="form-input text-sm h-[40px] bg-transparent" onchange="updateClassOptions()" required>
+                                <option value="" disabled selected>Select</option>
+                                <optgroup label="Primary (P)">
+                                    <option value="P1">P1</option><option value="P2">P2</option>
+                                    <option value="P3">P3</option><option value="P4">P4</option>
+                                    <option value="P5">P5</option><option value="P6">P6</option>
+                                </optgroup>
+                                <optgroup label="Secondary (S)">
+                                    <option value="S1">S1</option><option value="S2">S2</option>
+                                    <option value="S3">S3</option><option value="S4">S4</option>
+                                    <option value="S5">S5</option><option value="S6">S6</option>
+                                </optgroup>
+                            </select>
+                        </div>
+                        <div class="space-y-1">
+                            <label class="text-[10px] font-mono uppercase opacity-50" data-t="classLabel">班別</label>
+                            <select id="login-class" class="form-input text-sm h-[40px] bg-transparent" required>
+                                <option value="" disabled selected>Grade first</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-mono uppercase opacity-50" data-t="avatarLabel">頭像網址 (選填)</label>
+                        <input type="url" id="login-avatar" class="form-input text-sm" placeholder="https://...">
+                    </div>
+                </div>
+                <button type="submit" class="w-full bg-[#141414] text-[#E4E3E0] py-4 text-xs font-bold uppercase tracking-widest hover:opacity-90 transition-all" data-t="loginBtn">進入系統</button>
+            </form>
+            
+            <div class="flex justify-center gap-4 text-[10px] font-mono uppercase opacity-30">
+                <span>V1.0.0 Stable</span>
+                <span>•</span>
+                <span>Local Storage Only</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="app" class="min-h-screen pb-20 hidden">
+        <!-- Header -->
+        <header class="border-b border-[#141414] p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 6 4 14"/><path d="M12 6v14"/><path d="M8 8v12"/><path d="M4 4v16"/><path d="M12 2h10"/><path d="m16 2-4 4 4 4"/></svg>
+                <h1 class="text-2xl font-bold tracking-tight uppercase">Library Rental System</h1>
+            </div>
+            
+            <nav class="flex bg-[#141414] p-1 rounded-sm">
+                <button onclick="switchTab('borrow')" id="tab-borrow" class="tab-btn px-6 py-2 text-xs font-bold uppercase tracking-widest bg-[#E4E3E0] text-[#141414]">借書登記</button>
+                <button onclick="switchTab('return')" id="tab-return" class="tab-btn px-6 py-2 text-xs font-bold uppercase tracking-widest text-[#E4E3E0] hover:opacity-70">還書管理</button>
+            </nav>
+
+            <div class="flex items-center gap-4">
+                <div class="text-right hidden sm:block">
+                    <p class="text-[10px] font-mono uppercase opacity-50" data-t="currentUserLabel">當前用戶</p>
+                    <div id="user-display-container">
+                        <p id="user-display-name" class="text-xs font-bold leading-none">載入中...</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="openModal('modal-help')" class="w-10 h-10 rounded-full border border-[#141414] border-opacity-10 flex items-center justify-center hover:bg-[#141414] hover:text-[#E4E3E0] transition-all">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>
+                    </button>
+                    <div id="user-avatar-container" onclick="openModal('modal-profile')" class="w-10 h-10 rounded-full overflow-hidden bg-[#141414] flex items-center justify-center text-[#E4E3E0] cursor-pointer hover:ring-2 ring-[#141414] ring-offset-2 transition-all">
+                        <img id="user-photo" src="" class="w-full h-full object-cover hidden">
+                        <div id="user-initial" class="text-sm font-bold">?</div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="max-w-7xl mx-auto p-6">
+            <!-- Stats -->
+            <section class="mb-12">
+                <div class="flex items-center gap-3 mb-6">
+                    <h2 class="text-[10px] font-mono font-bold uppercase tracking-[0.2em] opacity-40" data-t="statsSummary">數據統計摘要</h2>
+                    <div class="h-[1px] flex-1 bg-[#141414] opacity-10"></div>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    <div class="p-4 border border-[#141414] border-opacity-10 bg-white shadow-sm hover:shadow-md transition-shadow group">
+                        <p class="text-[10px] font-mono uppercase opacity-50 mb-1" data-t="totalRentals">累計借閱</p>
+                        <p id="stat-total" class="text-3xl font-bold tracking-tighter transition-transform origin-left">0</p>
+                    </div>
+                    <div class="p-4 border border-[#141414] border-opacity-10 bg-white shadow-sm hover:shadow-md transition-shadow group">
+                        <p class="text-[10px] font-mono uppercase opacity-50 mb-1" data-t="activeRentals">目前借出</p>
+                        <div class="flex items-baseline gap-2">
+                            <p id="stat-active" class="text-3xl font-bold tracking-tighter text-amber-600 transition-transform origin-left">0</p>
+                            <span class="w-2 h-2 rounded-full bg-amber-500 pulse"></span>
+                        </div>
+                    </div>
+                    <div class="p-4 border border-[#141414] border-opacity-10 bg-white shadow-sm hover:shadow-md transition-shadow group text-emerald-700">
+                        <p class="text-[10px] font-mono uppercase opacity-50 mb-1 text-[#141414]" data-t="returnedLabel">已歸還</p>
+                        <p id="stat-returned" class="text-3xl font-bold tracking-tighter transition-transform origin-left">0</p>
+                    </div>
+                    <div class="p-4 border border-[#141414] border-opacity-10 bg-white shadow-sm hover:shadow-md transition-shadow group">
+                        <p class="text-[10px] font-mono uppercase opacity-50 mb-1" data-t="activeStudents">活躍學生</p>
+                        <p id="stat-students" class="text-3xl font-bold tracking-tighter transition-transform origin-left">1</p>
+                    </div>
+                    <div class="p-4 border border-[#141414] border-opacity-10 bg-[#141414] text-[#E4E3E0] shadow-sm hover:shadow-md transition-shadow group col-span-2 md:col-span-1">
+                        <p class="text-[10px] font-mono uppercase opacity-50 mb-1 text-[#E4E3E0]" data-t="yourActivity">您的活躍度</p>
+                        <p id="stat-user" class="text-3xl font-bold tracking-tighter transition-transform origin-left">0</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tabs Content -->
+            <div id="content-borrow" class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                <!-- Sidebar Form -->
+                <section class="lg:col-span-4 transition-all" id="register-section">
+                    <div class="sticky top-6">
+                        <div class="flex items-center justify-between mb-6">
+                            <h2 class="font-serif-italic text-xl opacity-70 flex items-center gap-2">
+                                <span id="form-title">本月推薦書籍</span>
+                            </h2>
+                            <button onclick="toggleForm()" id="toggle-form-btn" class="flex items-center gap-2 px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest transition-all shadow-md border border-[#141414] bg-[#E4E3E0] text-[#141414] hover:bg-[#141414] hover:text-[#E4E3E0]">
+                                <span id="toggle-text">登記借書</span>
+                            </button>
+                        </div>
+
+                        <div id="recommendations-list" class="space-y-8 max-h-[60vh] overflow-y-auto pr-2">
+                            <!-- Fiction -->
+                            <div class="space-y-4">
+                                <h3 class="text-[10px] font-mono uppercase tracking-[0.2em] opacity-40 border-b border-[#141414] border-opacity-10 pb-2">Fiction 小說類</h3>
+                                <div class="space-y-3">
+                                    <div class="flex items-start gap-4 group">
+                                        <span class="font-serif-italic text-2xl opacity-20 group-hover:opacity-100 transition-opacity">01</span>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="font-bold text-sm truncate">The Catcher in the Rye</p>
+                                            <p class="text-[10px] opacity-50 uppercase tracking-wider">J.D. Salinger</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-4 group">
+                                        <span class="font-serif-italic text-2xl opacity-20 group-hover:opacity-100 transition-opacity">02</span>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="font-bold text-sm truncate">1984</p>
+                                            <p class="text-[10px] opacity-50 uppercase tracking-wider">George Orwell</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-4 group">
+                                        <span class="font-serif-italic text-2xl opacity-20 group-hover:opacity-100 transition-opacity">03</span>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="font-bold text-sm truncate">The Great Gatsby</p>
+                                            <p class="text-[10px] opacity-50 uppercase tracking-wider">F. Scott Fitzgerald</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-4 group">
+                                        <span class="font-serif-italic text-2xl opacity-20 group-hover:opacity-100 transition-opacity">04</span>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="font-bold text-sm truncate">Brave New World</p>
+                                            <p class="text-[10px] opacity-50 uppercase tracking-wider">Aldous Huxley</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-4 group">
+                                        <span class="font-serif-italic text-2xl opacity-20 group-hover:opacity-100 transition-opacity">05</span>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="font-bold text-sm truncate">To Kill a Mockingbird</p>
+                                            <p class="text-[10px] opacity-50 uppercase tracking-wider">Harper Lee</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Science -->
+                            <div class="space-y-4">
+                                <h3 class="text-[10px] font-mono uppercase tracking-[0.2em] opacity-40 border-b border-[#141414] border-opacity-10 pb-2">Science 科學類</h3>
+                                <div class="space-y-3">
+                                    <div class="flex items-start gap-4 group">
+                                        <span class="font-serif-italic text-2xl opacity-20 group-hover:opacity-100 transition-opacity">01</span>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="font-bold text-sm truncate">A Brief History of Time</p>
+                                            <p class="text-[10px] opacity-50 uppercase tracking-wider">Stephen Hawking</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-4 group">
+                                        <span class="font-serif-italic text-2xl opacity-20 group-hover:opacity-100 transition-opacity">02</span>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="font-bold text-sm truncate">The Selfish Gene</p>
+                                            <p class="text-[10px] opacity-50 uppercase tracking-wider">Richard Dawkins</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-4 group">
+                                        <span class="font-serif-italic text-2xl opacity-20 group-hover:opacity-100 transition-opacity">03</span>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="font-bold text-sm truncate">Cosmos</p>
+                                            <p class="text-[10px] opacity-50 uppercase tracking-wider">Carl Sagan</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-4 group">
+                                        <span class="font-serif-italic text-2xl opacity-20 group-hover:opacity-100 transition-opacity">04</span>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="font-bold text-sm truncate">Sapiens</p>
+                                            <p class="text-[10px] opacity-50 uppercase tracking-wider">Yuval Noah Harari</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-4 group">
+                                        <span class="font-serif-italic text-2xl opacity-20 group-hover:opacity-100 transition-opacity">05</span>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="font-bold text-sm truncate">The Elegant Universe</p>
+                                            <p class="text-[10px] opacity-50 uppercase tracking-wider">Brian Greene</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- History -->
+                            <div class="space-y-4">
+                                <h3 class="text-[10px] font-mono uppercase tracking-[0.2em] opacity-40 border-b border-[#141414] border-opacity-10 pb-2">History 歷史類</h3>
+                                <div class="space-y-3">
+                                    <div class="flex items-start gap-4 group">
+                                        <span class="font-serif-italic text-2xl opacity-20 group-hover:opacity-100 transition-opacity">01</span>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="font-bold text-sm truncate">Guns, Germs, and Steel</p>
+                                            <p class="text-[10px] opacity-50 uppercase tracking-wider">Jared Diamond</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-4 group">
+                                        <span class="font-serif-italic text-2xl opacity-20 group-hover:opacity-100 transition-opacity">02</span>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="font-bold text-sm truncate">The Silk Roads</p>
+                                            <p class="text-[10px] opacity-50 uppercase tracking-wider">Peter Frankopan</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-4 group">
+                                        <span class="font-serif-italic text-2xl opacity-20 group-hover:opacity-100 transition-opacity">03</span>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="font-bold text-sm truncate">SPQR</p>
+                                            <p class="text-[10px] opacity-50 uppercase tracking-wider">Mary Beard</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-4 group">
+                                        <span class="font-serif-italic text-2xl opacity-20 group-hover:opacity-100 transition-opacity">04</span>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="font-bold text-sm truncate">Team of Rivals</p>
+                                            <p class="text-[10px] opacity-50 uppercase tracking-wider">Doris Kearns Goodwin</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-4 group">
+                                        <span class="font-serif-italic text-2xl opacity-20 group-hover:opacity-100 transition-opacity">05</span>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="font-bold text-sm truncate">Postwar</p>
+                                            <p class="text-[10px] opacity-50 uppercase tracking-wider">Tony Judt</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="borrow-form" class="hidden space-y-6 card-enter">
+                            <div class="mb-6 py-4 border-b border-[#141414] border-opacity-10">
+                                <p class="text-[10px] font-mono uppercase opacity-50 mb-1" data-t="autoFill">自動填寫資料</p>
+                                <p id="form-user-info" class="text-sm font-bold">載入中...</p>
+                                <p class="text-xs opacity-70">Library Member</p>
+                            </div>
+                            <form onsubmit="handleFormSubmit(event)" class="space-y-6">
+                                <div class="space-y-2">
+                                    <label class="text-[11px] font-mono uppercase tracking-wider opacity-50 flex items-center gap-2" data-t="fieldBook">
+                                        書名
+                                    </label>
+                                    <input type="text" id="bookTitle" class="form-input text-sm" placeholder="Enter book title..." required>
+                                </div>
+                                <div class="grid grid-cols-2 gap-4">
+                                    <div class="space-y-2">
+                                        <label class="text-[11px] font-mono uppercase tracking-wider opacity-50" data-t="fieldDate">借閱日期</label>
+                                        <input type="date" id="borrowDate" class="form-input text-xs" required>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="text-[11px] font-mono uppercase tracking-wider opacity-50" data-t="fieldExpectedReturn">歸還日期</label>
+                                        <input type="date" id="returnDate" class="form-input text-xs" required>
+                                    </div>
+                                </div>
+                                <button type="submit" class="w-full border border-[#141414] text-[#141414] py-4 flex items-center justify-center gap-2 hover:bg-[#141414] hover:text-[#E4E3E0] transition-all uppercase font-bold tracking-widest text-sm" data-t="registerBorrowing">確認借出</button>
+                            </form>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Borrow List -->
+                <section class="lg:col-span-8 lg:border-l lg:border-[#141414] lg:pl-8">
+                    <div class="flex items-center justify-between mb-6 text-xl">
+                        <h2 class="font-serif-italic opacity-70" data-t="currentBorrowList">當前借出清單</h2>
+                        <div id="active-badge" class="text-[10px] font-mono border border-[#141414] text-[#141414] px-2 py-1">ACTIVE: 0</div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="border-b border-[#141414]">
+                                    <th class="py-4 text-[11px] font-mono uppercase tracking-wider opacity-50" data-t="fieldBook">書名</th>
+                                    <th class="py-4 text-[11px] font-mono uppercase tracking-wider opacity-50" data-t="fieldBorrower">借閱者</th>
+                                    <th class="py-4 text-[11px] font-mono uppercase tracking-wider opacity-50" data-t="fieldClass">班別</th>
+                                    <th class="py-4 text-[11px] font-mono uppercase tracking-wider opacity-50" data-t="fieldDate">借閱日期</th>
+                                    <th class="py-4 text-[11px] font-mono uppercase tracking-wider opacity-50" data-t="fieldExpectedReturn">預計歸還</th>
+                                </tr>
+                            </thead>
+                            <tbody id="borrow-table-body">
+                                <!-- Records here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Return Tab -->
+            <div id="content-return" class="hidden space-y-8 card-enter">
+                <section class="bg-[#141414] text-[#E4E3E0] p-8 rounded-sm">
+                    <div class="flex items-center justify-between mb-8">
+                        <div>
+                            <h2 class="text-2xl font-bold uppercase tracking-tighter" data-t="toReturnTitle">待歸還書籍</h2>
+                            <p class="font-serif-italic opacity-60" data-t="toReturnSub">此處顯示您的當前借閱</p>
+                        </div>
+                    </div>
+                    <div id="return-cards-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <!-- Cards here -->
+                    </div>
+                </section>
+                
+                <section>
+                    <div class="flex items-center gap-4 mb-6">
+                        <h2 class="font-serif-italic text-xl opacity-70" data-t="returnHistory">已歸還歷史記錄</h2>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse opacity-50">
+                            <thead>
+                                <tr class="border-b border-[#141414]">
+                                    <th class="py-4 text-[11px] font-mono uppercase tracking-wider" data-t="fieldBook">書名</th>
+                                    <th class="py-4 text-[11px] font-mono uppercase tracking-wider" data-t="fieldPeriod">借閱時期</th>
+                                    <th class="py-4 text-[11px] font-mono uppercase tracking-wider" data-t="fieldReturnedAt">歸還日期</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-table-body">
+                                <!-- History here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // --- Translations ---
+        const TRANSLATIONS = {
+            'zh-TW': {
+                loginTitle: "圖書館系統登錄",
+                loginSub: "請輸入您的資料以存取系統",
+                googleLogin: "使用 Google 帳號登入",
+                orFillInfo: "或者填寫個人資料",
+                nameLabel: "姓名",
+                idLabel: "學號 / 編號",
+                gradeLabel: "年級",
+                classLabel: "班別",
+                avatarLabel: "頭像網址 (選填)",
+                loginBtn: "進入系統",
+                borrowTab: "借書登記",
+                returnTab: "還書管理",
+                currentUserLabel: "當前用戶",
+                statsSummary: "數據統計摘要",
+                totalRentals: "累計借閱",
+                activeRentals: "目前借出",
+                returnedLabel: "已歸還",
+                activeStudents: "活躍學生",
+                yourActivity: "您的活躍度",
+                recTitle: "本月推薦書籍",
+                registerBorrowing: "登記借書",
+                currentBorrowList: "當前借出清單",
+                fieldBook: "書名",
+                fieldBorrower: "借閱者",
+                fieldClass: "班別",
+                fieldDate: "借閱日期",
+                fieldExpectedReturn: "預計歸還",
+                toReturnTitle: "待歸還書籍",
+                toReturnSub: "此處顯示您的當前借閱",
+                returnHistory: "已歸還歷史記錄",
+                returnBtn: "確認歸還",
+                fieldPeriod: "借閱時期",
+                fieldReturnedAt: "歸還日期",
+                manualTitle: "使用說明書",
+                helpStep1: "1. 登錄您的帳戶以同步本地借閱資料。",
+                helpStep2: "2. 在「借書登記」頁面可以查看推薦書籍或手動登記新借閱。",
+                helpStep3: "3. 點擊右上角頭像可以進入個人檔案修改資料或切換語言。",
+                helpStep4: "4. 在「還書管理」頁面可以查看您目前借出的書籍並進行歸還登記。",
+                settings: "設定",
+                profileTitle: "個人資料管理",
+                saveChanges: "儲存修改",
+                selectLanguage: "語言設定",
+                logout: "登出並清除本地快取",
+                close: "關閉",
+                confirmReturn: "確定要歸還這本書嗎？",
+                confirmLogout: "確定要登出嗎？您的數據將保留在 localStorage。",
+                loginSuccess: "歡迎！請核對並補充您的班級資訊以完成登錄。",
+                borrowSuccess: "借書登記成功！",
+                profileUpdateSuccess: "資料已更新！",
+                noBorrow: "暫無借閱記錄",
+                noItemsToReturn: "目前沒有待歸還的書籍",
+                noHistory: "暫無歷史記錄",
+                myBorrowOnly: "您目前沒有待歸還的書籍",
+                autoFill: "自動填寫資料",
+                exportData: "匯出用戶檔案 (JSON)"
+            },
+            'en': {
+                loginTitle: "Library System Login",
+                loginSub: "Enter your information to access the system",
+                googleLogin: "Sign in with Google",
+                orFillInfo: "Or fill in your profile",
+                nameLabel: "Name",
+                idLabel: "Student ID / Code",
+                gradeLabel: "Grade",
+                classLabel: "Class",
+                avatarLabel: "Avatar URL (Optional)",
+                loginBtn: "Enter System",
+                borrowTab: "Borrow",
+                returnTab: "Return",
+                currentUserLabel: "Current User",
+                statsSummary: "Data Statistics Summary",
+                totalRentals: "Total Rentals",
+                activeRentals: "Active Rentals",
+                returnedLabel: "Returned",
+                activeStudents: "Active Students",
+                yourActivity: "Your Activity",
+                recTitle: "Monthly Recommendations",
+                registerBorrowing: "Register Borrow",
+                currentBorrowList: "Current List",
+                fieldBook: "Book Title",
+                fieldBorrower: "Borrower",
+                fieldClass: "Class",
+                fieldDate: "Date",
+                fieldExpectedReturn: "Expected Return",
+                toReturnTitle: "Books to Return",
+                toReturnSub: "Your current rentals are shown here",
+                returnHistory: "Return History",
+                returnBtn: "Return Now",
+                fieldPeriod: "Rental Period",
+                fieldReturnedAt: "Returned At",
+                manualTitle: "User Manual",
+                helpStep1: "1. Log in to sync your local data.",
+                helpStep2: "2. Browse recommendations or manually register new rentals in 'Borrow'.",
+                helpStep3: "3. Click avatar to edit settings or switch languages.",
+                helpStep4: "4. Manage and return your active rentals in 'Return'.",
+                settings: "Settings",
+                profileTitle: "Profile Management",
+                saveChanges: "Save Changes",
+                selectLanguage: "Language",
+                logout: "Logout (Clear Cache)",
+                close: "Close",
+                confirmReturn: "Are you sure you want to return this book?",
+                confirmLogout: "Are you sure you want to logout? Data remains in localStorage.",
+                loginSuccess: "Welcome! Please check your class info to complete login.",
+                borrowSuccess: "Borrow registered successfully!",
+                profileUpdateSuccess: "Profile updated!",
+                noBorrow: "No borrowing records",
+                noItemsToReturn: "No books to return",
+                noHistory: "No history found",
+                myBorrowOnly: "You have no active rentals",
+                autoFill: "Auto-fill Data",
+                exportData: "Export Profile Record (JSON)"
+            }
+        };
+
+        let currentLang = localStorage.getItem("lang") || 'zh-TW';
+
+        function changeLanguage(lang) {
+            currentLang = lang;
+            localStorage.setItem("lang", lang);
+            updateUITranslations();
+            closeModal('modal-profile');
+        }
+
+        function updateUITranslations() {
+            const t = TRANSLATIONS[currentLang];
+            document.querySelectorAll('[data-t]').forEach(el => {
+                const key = el.getAttribute('data-t');
+                if (t[key]) el.innerText = t[key];
+            });
+            // Update placeholders and dynamic labels
+            document.getElementById("form-title").innerText = isFormVisible ? t.registerBorrowing : t.recTitle;
+            document.getElementById("toggle-text").innerText = isFormVisible ? t.close : t.registerBorrowing;
+            document.getElementById("bookTitle").placeholder = currentLang === 'en' ? "Enter book title..." : "請輸入書名...";
+            
+            // Update tabs
+            document.getElementById("tab-borrow").innerText = t.borrowTab;
+            document.getElementById("tab-return").innerText = t.returnTab;
+            
+            // Re-render lists to update dynamic content
+            renderList();
+        }
+
+        function openModal(id) {
+            if (id === 'modal-profile') {
+                // Pre-fill profile fields
+                document.getElementById("profile-name").value = currentUser.name;
+                document.getElementById("profile-id").value = currentUser.id;
+                document.getElementById("profile-grade").value = currentUser.grade;
+                updateClassOptions('profile');
+                document.getElementById("profile-class").value = currentUser.classLetter;
+                document.getElementById("profile-avatar").value = currentUser.photo || "";
+            }
+            document.getElementById(id).classList.remove("hidden");
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.add("hidden");
+        }
+
+        function exportUserData() {
+            const data = {
+                user: currentUser,
+                records: loadData(),
+                exportedAt: new Date().toISOString()
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `user_profile_${currentUser ? currentUser.id : 'export'}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // --- Identity Logic ---
+        let currentUser = null;
+
+        function checkAuth() {
+            const savedUser = localStorage.getItem("user");
+            if (savedUser) {
+                try {
+                    currentUser = JSON.parse(savedUser);
+                    document.getElementById("login-overlay").classList.add("hidden");
+                    document.getElementById("app").classList.remove("hidden");
+                    updateUserUI();
+                    updateUITranslations();
+                    renderList();
+                } catch (e) {
+                    localStorage.removeItem("user");
+                    checkAuth();
+                }
+            } else {
+                document.getElementById("login-overlay").classList.remove("hidden");
+                document.getElementById("app").classList.add("hidden");
+                updateUITranslations();
+            }
+        }
+
+        function handleLogin(e) {
+            e.preventDefault();
+            const name = document.getElementById("login-name").value;
+            const id = document.getElementById("login-id").value;
+            const grade = document.getElementById("login-grade").value;
+            const classLetter = document.getElementById("login-class").value;
+            const photo = document.getElementById("login-avatar").value;
+            
+            currentUser = { name, id, grade, classLetter, photo };
+            localStorage.setItem("user", JSON.stringify(currentUser));
+            checkAuth();
+        }
+
+        async function handleGoogleLogin() {
+            const t = TRANSLATIONS[currentLang];
+            try {
+                if (!window.signInWithPopup) {
+                    alert(currentLang === 'en' ? "Firebase not ready, retry." : "Firebase 尚未準備就緒，請稍候重試。");
+                    return;
+                }
+                const result = await window.signInWithPopup(window.auth, window.provider);
+                const user = result.user;
+                
+                // Pre-fill the form with Google data
+                document.getElementById("login-name").value = user.displayName || "";
+                document.getElementById("login-id").value = user.uid.substring(0, 8); // Simplified ID
+                document.getElementById("login-avatar").value = user.photoURL || "";
+                
+                alert(t.loginSuccess.replace("${user.displayName}", user.displayName));
+            } catch (error) {
+                console.error("Google Login Error:", error);
+                alert("Login Error: " + error.message);
+            }
+        }
+
+        function updateClassOptions(context = 'login') {
+            const prefix = context === 'profile' ? 'profile' : 'login';
+            const grade = document.getElementById(`${prefix}-grade`).value;
+            const classSelect = document.getElementById(`${prefix}-class`);
+            const defaultText = currentLang === 'en' ? "Select" : "請選擇";
+            classSelect.innerHTML = `<option value="" disabled selected>${defaultText}</option>`;
+            
+            if (!grade) return;
+
+            let classes = [];
+            if (grade.startsWith('P')) {
+                classes = ['A', 'B', 'C', 'D', 'E'];
+            } else if (grade.startsWith('S')) {
+                classes = ['A', 'B', 'C', 'D', 'E', 'F'];
+            }
+
+            classes.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c;
+                opt.innerText = c + (currentLang === 'en' ? ' Class' : ' 班');
+                classSelect.appendChild(opt);
+            });
+        }
+
+        function handleUpdateProfile(e) {
+            e.preventDefault();
+            const t = TRANSLATIONS[currentLang];
+            const name = document.getElementById("profile-name").value;
+            const id = document.getElementById("profile-id").value;
+            const grade = document.getElementById("profile-grade").value;
+            const classLetter = document.getElementById("profile-class").value;
+            const photo = document.getElementById("profile-avatar").value;
+            
+            currentUser = { ...currentUser, name, id, grade, classLetter, photo };
+            localStorage.setItem("user", JSON.stringify(currentUser));
+            
+            updateUserUI();
+            alert(t.profileUpdateSuccess);
+            closeModal('modal-profile');
+            // Force refresh lists to update user info in history if needed
+            renderList();
+        }
+
+        async function handleLogout() {
+            const t = TRANSLATIONS[currentLang];
+            if (confirm(t.confirmLogout)) {
+                try {
+                    if (window.signOut && window.auth) {
+                        await window.signOut(window.auth);
+                    }
+                } catch (e) {
+                    console.warn("Firebase logout failed, continuing with local logout:", e);
+                }
+                localStorage.removeItem("user");
+                currentUser = null;
+                closeModal('modal-profile');
+                // Use a short delay for smooth transition
+                setTimeout(() => {
+                    checkAuth();
+                }, 50);
+            }
+        }
+
+        function updateUserUI() {
+            if (!currentUser) return;
+            
+            // Header Info
+            const nameDisplay = document.getElementById("user-display-name");
+            if (nameDisplay) {
+                nameDisplay.innerText = currentUser.name;
+                const container = nameDisplay.parentElement;
+                container.innerHTML = `
+                    <p id="user-display-name" class="text-xs font-bold leading-none">${currentUser.name}</p>
+                    <p class="text-[10px] opacity-40 mt-1">${currentUser.grade}${currentUser.classLetter}</p>
+                `;
+            }
+            
+            // Registration Form Info
+            const formUserInfo = document.getElementById("form-user-info");
+            if (formUserInfo) {
+                formUserInfo.innerText = `${currentUser.name} · ${currentUser.id}`;
+                if (formUserInfo.nextElementSibling) {
+                    formUserInfo.nextElementSibling.innerText = `${currentUser.grade}${currentUser.classLetter} 班`;
+                }
+            }
+            
+            // Avatar update
+            const photoImg = document.getElementById("user-photo");
+            const initialDiv = document.getElementById("user-initial");
+            
+            if (currentUser.photo) {
+                photoImg.src = currentUser.photo;
+                photoImg.classList.remove("hidden");
+                initialDiv.classList.add("hidden");
+            } else {
+                photoImg.classList.add("hidden");
+                initialDiv.classList.remove("hidden");
+                initialDiv.innerText = (currentUser.name || "U").charAt(0).toUpperCase();
+            }
+        }
+
+        // --- Core Functions (Rule 6) ---
+
+        function saveData(newRecord) {
+            const records = loadData();
+            // Link record to current user
+            newRecord.userId = currentUser.id;
+            newRecord.userName = currentUser.name;
+            newRecord.grade = currentUser.grade;
+            newRecord.classLetter = currentUser.classLetter;
+            
+            records.push(newRecord);
+            localStorage.setItem("records", JSON.stringify(records));
+            renderList();
+        }
+
+        function loadData() {
+            const records = localStorage.getItem("records");
+            return records ? JSON.parse(records) : [];
+        }
+
+        function renderList() {
+            const t = TRANSLATIONS[currentLang];
+            const records = loadData();
+            const borrowTable = document.getElementById("borrow-table-body");
+            const historyTable = document.getElementById("history-table-body");
+            const cardsGrid = document.getElementById("return-cards-grid");
+
+            // Clear containers
+            borrowTable.innerHTML = "";
+            historyTable.innerHTML = "";
+            cardsGrid.innerHTML = "";
+
+            const actives = records.filter(r => r.status === "active");
+            const completed = records.filter(r => r.status === "returned");
+
+            // Stats update
+            document.getElementById("stat-total").innerText = records.length;
+            document.getElementById("stat-active").innerText = actives.length;
+            document.getElementById("stat-returned").innerText = completed.length;
+            document.getElementById("stat-user").innerText = records.length;
+            document.getElementById("active-badge").innerText = `ACTIVE: ${actives.length}`;
+
+            if (actives.length === 0) {
+                borrowTable.innerHTML = `<tr><td colspan="5" class="py-20 text-center font-serif-italic italic opacity-40">${t.noBorrow}</td></tr>`;
+                cardsGrid.innerHTML = `<div class="col-span-full py-12 text-center opacity-40 font-serif-italic italic">${t.noItemsToReturn}</div>`;
+            } else {
+                actives.forEach(r => {
+                    // Row for table
+                    const tr = document.createElement("tr");
+                    tr.className = "border-b border-[#141414] border-opacity-10 hover:bg-[#141414] hover:text-[#E4E3E0] transition-colors group";
+                    tr.innerHTML = `
+                        <td class="py-4 font-medium">${r.bookTitle}</td>
+                        <td class="py-4">${r.userName || "未知用戶"}</td>
+                        <td class="py-4 font-mono text-xs opacity-60">${r.grade || ""}${r.classLetter || ""} · ${r.userId || "N/A"}</td>
+                        <td class="py-4 font-mono text-xs">${r.borrowDate}</td>
+                        <td class="py-4 font-mono text-xs">${r.returnDate}</td>
+                    `;
+                    borrowTable.appendChild(tr);
+
+                    // Card for return (only show if it's the current user's book)
+                    if (r.userId === currentUser.id) {
+                        const card = document.createElement("div");
+                        card.className = "border border-[#E4E3E0] border-opacity-20 p-6 flex flex-col justify-between hover:border-opacity-100 transition-all group";
+                        card.innerHTML = `
+                            <div>
+                                <div class="flex justify-between items-start mb-4 opacity-50 font-mono text-[10px]">
+                                    <span>ID: ${r.id.split('_')[1]}</span>
+                                    <span>${r.userId} · ${r.userName}</span>
+                                </div>
+                                <h3 class="text-lg font-bold mb-1">${r.bookTitle}</h3>
+                                <div class="text-[11px] font-mono opacity-50 space-y-1 mb-4">
+                                    <p>${t.fieldDate}: ${r.borrowDate}</p>
+                                    <p class="text-red-400">${t.fieldExpectedReturn}: ${r.returnDate}</p>
+                                </div>
+                            </div>
+                            <button onclick="returnBook('${r.id}')" class="mt-6 w-full border border-[#E4E3E0] py-2 text-xs font-bold uppercase tracking-widest hover:bg-[#E4E3E0] hover:text-[#141414] transition-all">${t.returnBtn}</button>
+                        `;
+                        cardsGrid.appendChild(card);
+                    }
+                });
+            }
+
+            // If no personal cards were added
+            if (cardsGrid.innerHTML === "") {
+                cardsGrid.innerHTML = `<div class="col-span-full py-12 text-center opacity-40 font-serif-italic italic">${t.myBorrowOnly}</div>`;
+            }
+
+            if (completed.length === 0) {
+                historyTable.innerHTML = `<tr><td colspan="3" class="py-12 text-center font-serif-italic italic opacity-40">${t.noHistory}</td></tr>`;
+            } else {
+                completed.forEach(r => {
+                    const tr = document.createElement("tr");
+                    tr.className = "border-b border-[#141414] border-opacity-10";
+                    tr.innerHTML = `
+                        <td class="py-4 font-medium">${r.bookTitle}</td>
+                        <td class="py-4 font-mono text-xs">${r.borrowDate} ~ ${r.returnDate}</td>
+                        <td class="py-4 font-mono text-xs">${new Date(r.returnedAt).toLocaleDateString()}</td>
+                    `;
+                    historyTable.appendChild(tr);
+                });
+            }
+        }
+
+        // --- Interaction Logic ---
+
+        let activeTab = 'borrow';
+        let isFormVisible = false;
+
+        function switchTab(tab) {
+            activeTab = tab;
+            document.getElementById("content-borrow").classList.toggle("hidden", tab !== 'borrow');
+            document.getElementById("content-return").classList.toggle("hidden", tab !== 'return');
+            
+            document.getElementById("tab-borrow").className = `tab-btn px-6 py-2 text-xs font-bold uppercase tracking-widest ${tab === 'borrow' ? 'bg-[#E4E3E0] text-[#141414]' : 'text-[#E4E3E0] hover:opacity-70'}`;
+            document.getElementById("tab-return").className = `tab-btn px-6 py-2 text-xs font-bold uppercase tracking-widest ${tab === 'return' ? 'bg-[#E4E3E0] text-[#141414]' : 'text-[#E4E3E0] hover:opacity-70'}`;
+        }
+
+        function toggleForm() {
+            isFormVisible = !isFormVisible;
+            document.getElementById("recommendations-list").classList.toggle("hidden", isFormVisible);
+            document.getElementById("borrow-form").classList.toggle("hidden", !isFormVisible);
+            document.getElementById("form-title").innerText = isFormVisible ? "登記新借閱" : "本月推薦書籍";
+            document.getElementById("toggle-text").innerText = isFormVisible ? "關閉" : "登記借書";
+            
+            const btn = document.getElementById("toggle-form-btn");
+            if (isFormVisible) {
+                btn.classList.add("btn-active");
+            } else {
+                btn.classList.remove("btn-active");
+            }
+        }
+
+        function handleFormSubmit(e) {
+            const t = TRANSLATIONS[currentLang];
+            e.preventDefault();
+            const record = {
+                id: Date.now() + "_" + Math.random().toString(36).slice(2,6),
+                createdAt: new Date().toISOString(),
+                status: "active",
+                bookTitle: document.getElementById("bookTitle").value,
+                borrowDate: document.getElementById("borrowDate").value,
+                returnDate: document.getElementById("returnDate").value
+            };
+            saveData(record);
+            e.target.reset();
+            toggleForm();
+            alert(t.borrowSuccess);
+        }
+
+        function returnBook(id) {
+            const t = TRANSLATIONS[currentLang];
+            if (!confirm(t.confirmReturn)) return;
+            const records = loadData();
+            const index = records.findIndex(r => r.id === id);
+            if (index !== -1) {
+                records[index].status = "returned";
+                records[index].returnedAt = new Date().toISOString();
+                localStorage.setItem("records", JSON.stringify(records));
+                renderList();
+            }
+        }
+
+        // Initialize dates
+        document.getElementById("borrowDate").value = new Date().toISOString().split('T')[0];
+
+        // Initial render
+        checkAuth();
+    </script>
+</body>
+</html>

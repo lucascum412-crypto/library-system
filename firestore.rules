@@ -1,0 +1,74 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'studentId', 'name', 'grade', 'classLetter']) &&
+             data.uid == request.auth.uid &&
+             data.studentId is string && data.studentId.size() >= 3 && data.studentId.size() <= 20 &&
+             data.name is string && data.name.size() >= 1 &&
+             data.grade in ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6'] &&
+             data.classLetter is string && data.classLetter.size() == 1;
+    }
+
+    function isValidRental(data) {
+      return data.keys().hasAll(['uid', 'bookTitle', 'borrowerName', 'studentId', 'grade', 'classLetter', 'borrowDate', 'returnDate', 'createdAt', 'status']) &&
+             data.uid == request.auth.uid &&
+             data.bookTitle is string && data.bookTitle.size() >= 1 && data.bookTitle.size() <= 200 &&
+             data.borrowerName is string && data.borrowerName.size() >= 1 && data.borrowerName.size() <= 100 &&
+             data.studentId is string && data.studentId.size() >= 3 && data.studentId.size() <= 20 &&
+             data.grade in ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6'] &&
+             data.classLetter is string && data.classLetter.size() == 1 &&
+             data.borrowDate is string && data.borrowDate.matches("^\\d{4}-\\d{2}-\\d{2}.*") &&
+             data.returnDate is string && data.returnDate.matches("^\\d{4}-\\d{2}-\\d{2}.*") &&
+             data.status in ['borrowed', 'returned'] &&
+             data.createdAt is timestamp &&
+             (!('returnedAt' in data) || data.returnedAt is timestamp);
+    }
+
+    function isValidFavorite(data) {
+      return data.keys().hasAll(['uid', 'bookTitle', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             data.bookTitle is string && data.bookTitle.size() >= 1 &&
+             data.createdAt is timestamp;
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == userId && isValidUser(request.resource.data);
+    }
+
+    match /rentals/{rentalId} {
+      allow read: if true; 
+      allow create: if isAuthenticated() && isValidRental(request.resource.data);
+      allow update: if isAuthenticated() && 
+                     resource.data.uid == request.auth.uid &&
+                     request.resource.data.status == 'returned' &&
+                     request.resource.data.returnedAt is timestamp &&
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'returnedAt']);
+      allow delete: if false;
+    }
+
+    match /favorites/{favoriteId} {
+      allow read: if isAuthenticated() && resource.data.uid == request.auth.uid;
+      allow create: if isAuthenticated() && isValidFavorite(request.resource.data);
+      allow delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "1263896-x@g.puiching.edu.mo" && request.auth.token.email_verified == true));
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
