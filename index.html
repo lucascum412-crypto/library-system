@@ -577,6 +577,19 @@
     </div>
 
     <script>
+        const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx0ndg0R_gWQLrt7LQjmykja7WrPJxR2Ha0DwijJphU962QebLFTS5sJQlF56z7rtNT/exec";
+
+        async function syncToSheet(payload) {
+            if (APPS_SCRIPT_URL.includes("PASTE")) return;
+            try {
+                await fetch(APPS_SCRIPT_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "text/plain" },
+                    body: JSON.stringify(payload)
+                });
+            } catch (e) { console.warn(e); }
+        }
+
         // --- Translations ---
         const TRANSLATIONS = {
             'zh-TW': {
@@ -735,25 +748,6 @@
                 document.getElementById("profile-avatar").value = currentUser.photo || "";
             }
             document.getElementById(id).classList.remove("hidden");
-        }
-
-        // --- Apps Script Integration ---
-        // 如果您有部署後的 GAS URL，請填寫在下方，這樣所有用戶都會自動同步到同一個試算表
-        const GLOBAL_GAS_URL = "https://script.google.com/macros/s/AKfycbx0ndg0R_gWQLrt7LQjmykja7WrPJxR2Ha0DwijJphU962QebLFTS5sJQlF56z7rtNT/exec"; 
-
-        async function syncToGas(action, record) {
-            const url = GLOBAL_GAS_URL || (currentUser ? currentUser.gasUrl : null);
-            if (!url) return;
-            
-            try {
-                await fetch(url, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    body: JSON.stringify({ action, record, system: "LibrarySystem_v1" })
-                });
-            } catch (error) {
-                console.error("GAS Sync error:", error);
-            }
         }
 
         function closeModal(id) {
@@ -948,7 +942,7 @@
             
             records.push(newRecord);
             localStorage.setItem("records", JSON.stringify(records));
-            syncToGas('save', newRecord);
+            syncToSheet({ action: "create", record: newRecord });
             renderList();
         }
 
@@ -1092,10 +1086,15 @@
             const records = loadData();
             const index = records.findIndex(r => r.id === id);
             if (index !== -1) {
+                const returnedAt = new Date().toISOString();
                 records[index].status = "returned";
-                records[index].returnedAt = new Date().toISOString();
+                records[index].returnedAt = returnedAt;
                 localStorage.setItem("records", JSON.stringify(records));
-                syncToGas('return', records[index]);
+                syncToSheet({ 
+                    action: "update", 
+                    id: id, 
+                    changes: { status: "returned", returnedAt: returnedAt } 
+                });
                 renderList();
             }
         }
