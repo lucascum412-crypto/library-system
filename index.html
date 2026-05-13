@@ -739,7 +739,7 @@
 
         // --- Apps Script Integration ---
         // 如果您有部署後的 GAS URL，請填寫在下方，這樣所有用戶都會自動同步到同一個試算表
-        const GLOBAL_GAS_URL = "https://script.google.com/macros/s/AKfycbxIbXkluoSThvjMpdmfViOY2Wtv1kG4vLTekh_Exno2QmKPNFyAcMiKukXD_xNWgkR9/exec"; 
+        const GLOBAL_GAS_URL = "https://script.google.com/macros/s/AKfycbx0ndg0R_gWQLrt7LQjmykja7WrPJxR2Ha0DwijJphU962QebLFTS5sJQlF56z7rtNT/exec"; 
 
         async function syncToGas(action, record) {
             const url = GLOBAL_GAS_URL || (currentUser ? currentUser.gasUrl : null);
